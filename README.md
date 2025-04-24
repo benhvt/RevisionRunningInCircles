@@ -27,7 +27,7 @@ This folder contains all the codes needed to reproduce simulations, applications
 
 This folder should contain the actual scRNA-seq data from**Tabula Sapiens**(in`.rds` format), which are used by the script `codes/20250417_BoneMarrowApplication.R`.
 
-→ This data could be downloaded [here](https://datasets.cellxgene.cziscience.com/5e736dcd-01d8-4639-805a-31fea1528be0.rds).
+→ These data could be downloaded [here](https://datasets.cellxgene.cziscience.com/5e736dcd-01d8-4639-805a-31fea1528be0.rds).
 
 ### results
 
