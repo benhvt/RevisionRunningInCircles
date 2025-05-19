@@ -465,7 +465,7 @@ plt_typeI_negbin <- neg_bin_typeI %>%
   geom_abline(slope=1, intercept=0, col="red", size = 1.2, alpha = .7) + xlab("Theoretical Quantiles") + 
   stat_qq(aes(sample = pvalues, colour = factor(Fission)),
           distribution = qunif, size = 1.5) +
-  scale_colour_manual(name = "Overdispersion", 
+  scale_colour_manual(name = "", 
                       values = c("#334EAC", "#BAD6EB")) +
   ylab("Empirical Quantiles") + 
   xlim(c(0, 1)) + ylim(c(0, 1)) + 
