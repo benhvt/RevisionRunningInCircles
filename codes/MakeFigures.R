@@ -538,4 +538,4 @@ plt_application <- ((allPairplot[[1]]+ ggtitle("C") + theme(plot.title = element
   theme(text = element_text(size = 20))
 
 
-ggsave("Figures/figure4.png", width = 300, height = 200, units = "mm")
+ggsave("Figures/figure4.png", width = 315, height = 200, units = "mm")
