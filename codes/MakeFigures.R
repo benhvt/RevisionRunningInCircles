@@ -15,7 +15,8 @@ library(ggplot2)
 library(patchwork)
 library(latex2exp)
 library(mvtnorm)
-
+library(readxl)
+library(scales)
 theme_set(theme_classic())
 
 #------------------------------------------------------------------------------#
@@ -175,10 +176,11 @@ ariResults <- ideal_sc %>%
   summarise(ARI_m = mean(ARI),
             ARI_sd = sd(ARI))
 
-plt_power <- ggplot(powerResults) +
+plt_power <- powerResults %>%
+  mutate(Fission_lab = gsub(" ", "~", Fission_lab)) %>%
+  ggplot() +
   aes(x=tau, y = Power, 
-      colour = as.factor(n),
-      linetype = Fission_lab) +
+      colour = as.factor(n)) +
   geom_line(linewidth = .75,
             alpha = .8) +
   scale_colour_manual(name = "Sample Size",
@@ -186,27 +188,44 @@ plt_power <- ggplot(powerResults) +
   scale_linetype_manual(name = "Data fission",
                         values = c(1, 6)) +
   ggnewscale::new_scale_colour() +
-  facet_grid(~Variable_lab, 
+  geom_hline(aes(yintercept = 0.05, 
+                 colour = "5% nominal level"),
+             linewidth = .75, 
+             linetype = "dashed",
+             show.legend = FALSE) +
+  scale_colour_manual(name = "",
+                      values = "#DB2763") +
+  facet_grid(Variable_lab~Fission_lab, 
              labeller = label_parsed) +
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
   ylab("Statistical Power \n 5% level")
 
 plt_ari <- ggplot(ariResults) +
   aes(x=tau, y = ARI_m, 
-      colour = as.factor(n),
-      linetype = Fission_lab) +
+      colour = as.factor(n)) +
   geom_line(linewidth = .75, 
             alpha = .8) +
+  facet_grid(~Fission_lab) +
   scale_colour_manual(name = "Sample Size",
                       values = MetBrewer::met.brewer("Derain", n=7)) +
-  scale_linetype_manual(name = "Data fission",
-                        values = c(1,6)) +
-  ggnewscale::new_scale_colour() +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
   ylab("Adjusted Rand \n Index")
 
+figure2A <- ((plt_illu_power + theme(legend.position = "bottom")) +
+               (plt_ari/plt_power + plot_layout(guides = "collect",
+                                                heights = c(1,4)))) +
+  plot_layout(widths = c(1.5,1.25)) +
+  plot_annotation(tag_levels = list(c("A", "B", "C"))) &
+  theme(text = element_text(size = 9)) &
+  theme(plot.tag = element_text(face = "bold"))
 
-
+ggsave(figure2A,
+       filename = "Figures/figure2A.pdf",
+       width = 180,
+       height = 100,
+       units = "mm")
 #------------------------------------------------------------------------------#
 #                      Second panel of the Figure                              #
 #                 Type I error rate in the worst scenario                      #
@@ -217,6 +236,7 @@ clust_comp <- kmeans(X[Z==1,], centers = 2, nstart = 100)$cluster
 cluster <- rep(NA, sample_size[4])
 cluster[Z==1] <- clust_comp
 cluster[Z==2] <- 3
+
 # Figure generation 
 plt_illu_typeI <- data.frame(X1 = X[,1],
                              X2 = X[,2],
@@ -238,48 +258,44 @@ plt_illu_typeI <- data.frame(X1 = X[,1],
 adverse_sc <- read.csv(file = "results/AdverseScenario_GaussianFission.csv")
 
 plt_typeI <- adverse_sc %>%
-  mutate(Fission_lab = paste(Fission, "fission", sep = " ")) %>%
+  mutate(Fission_lab = paste(Fission, "fission", sep = "~")) %>%
   group_by(Fission_lab,Variable, tau, n) %>%
   summarise(TypeI = mean(pvalues < 0.05)) %>%
   mutate(Variable_lab = ifelse(Variable == "X1", "X[1]", "X[2]")) %>%
   ggplot() +
   aes(x=tau, y = TypeI, 
-      colour = as.factor(n),
-      linetype = Fission_lab) +
+      colour = as.factor(n)) +
   geom_line(linewidth = .75, 
             alpha = .8) +
   scale_colour_manual(name = "Sample Size",
                       values = MetBrewer::met.brewer("Derain", n=7)) +
-  scale_linetype_manual(name = "Data fission",
-                        values = c(1, 6)) +
   ggnewscale::new_scale_colour() +
   geom_hline(aes(yintercept = 0.05, 
                  colour = "5% nominal level"),
              linewidth = .75, 
-             linetype = "dashed") +
+             linetype = "dashed",
+             show.legend = FALSE) +
   scale_colour_manual(name = "",
                       values = "#DB2763") +
-  facet_grid(~Variable_lab, 
+  facet_grid(Variable_lab~Fission_lab, 
              labeller = label_parsed) +
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
-  ylab("Type I error rate \n 5% nominal levels") 
+  ylab("Type I error rate \n 5% nominal levels") +
+  theme(legend.box = "vertical")
 
-figure2 <- (
-  ((plt_illu_power + theme(legend.position = "top")) /
-     (plt_illu_typeI + theme(legend.position = "bottom"))) |
-    (((plt_power / plt_ari) / plt_typeI) + plot_layout(guides = "collect"))
-) +
-  plot_layout(widths = c(1.5, 2)) +
-  plot_annotation(tag_levels = list(c("A", "D", "B", "C", "E"))) &
-  theme(text = element_text(size = 14)) &
+
+figure2B <- plt_illu_typeI + plt_typeI +
+  plot_layout(widths = c(1.5,1.25)) +
+  plot_annotation(tag_levels = list(c("A", "B"))) &
+  theme(text = element_text(size = 8)) &
   theme(plot.tag = element_text(face = "bold"))
-figure2
 
-ggsave(plot = figure2,
-       filename = "Figures/figure2.pdf",
-       width = 300, 
-       height = 200, 
+ggsave(figure2B,
+       filename = "Figures/figure2B.pdf",
+       width = 180,
+       height = 100,
        units = "mm")
+
 
 #------------------------------------------------------------------------------#
 #                                  Figures                                     #
@@ -423,13 +439,13 @@ ggsave(filename = "Figures/figure3.pdf",
        dpi = 600)
 
 #------------------------------------------------------------------------------#
-#                                  Figures                                     #
-#         Data fission for scRNA-seq (Binomial Negatives Mixture)              # 
+#                                  Figure 4                                    #
+#         Data fission for scRNA-seq (Binomial Negatives Simulations)          # 
 #------------------------------------------------------------------------------#
 
 
 #------------------------------------------------------------------------------#
-#                     Panel A and B: Simulations results                       #
+#           Panel A and B: Simulations results under Mixture Settings          #
 
 #-- Parameters 
 n <- 100
@@ -481,67 +497,260 @@ plt_typeI_negbin <- neg_bin_typeI %>%
 plt_negbin <- (plt_illu_negbin + ggtitle("A") + theme(plot.title = element_text(face = "bold", size = 20))) + 
   (plt_typeI_negbin + ggtitle("B") + theme(plot.title = element_text(face = "bold", size = 20)))
 
+
 #------------------------------------------------------------------------------#
-#                         Panel C: Applications results                        #
+#            Panel C: Simulations results under Correlated setting             #
 
-# Parameter
-cell_pop_to_test <- c("neutrophil", 
-                      "macrophage",
-                      "monocyte",
-                      "granulocyte",
-                      "CD4-positive, alpha-beta T cell",
-                      "memory B cell")
 
-cell_theta <- read.csv(file = "results/Application_CellPopulationOverdispersion.csv")
+neg_bin_cor_res <- read.csv("results/CorrelationAndRelativeBiais.csv")
 
-firstup <- function(x) {
-  substr(x, 1, 1) <- toupper(substr(x, 1, 1))
-  x
-}
+plt_neg_bin_cor <- neg_bin_cor_res %>% 
+  mutate(Theta_hat = Theta*Error) %>% 
+  mutate(RelativeBiais = (Theta_hat-Theta)/Theta) %>% 
+  group_by(Method, Estimation, Rho, RelativeBiais, Error) %>% 
+  filter(Rho != 0.01) %>%
+  filter(!(RelativeBiais<0 & Method == "NB")) %>%
+  filter(RelativeBiais < 5) %>%
+  summarise(FDR = mean(p.adjust(pval, method = "BH") < 0.05),
+            typeI = mean(pval < 0.05)) %>%
+  mutate(Name = paste(Method, Estimation, collapse = "_")) %>%
+  mutate(
+    LabelName = case_when(
+      Name == "Gauss Oracle" ~ "Gaussian~(theta)",
+      Name == "Gauss Wrong"  ~ "Gaussian~(widehat(theta))",
+      Name == "NB Oracle"    ~ "Negative~Binomial~(theta)",
+      Name == "NB Wrong"     ~ "Negative~Binomial~(widehat(theta))",
+      TRUE ~ Name
+    )
+  ) %>%
+  ggplot() +
+  aes(x=RelativeBiais,
+      y = typeI, 
+      colour = as.factor(Rho)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = .9) +
+  facet_grid(~LabelName, labeller = label_parsed, scales = "free_x") +
+  geom_hline(yintercept = 0.05,
+             color = "grey20",
+             linewidth = 1.2,
+             linetype = "dashed") +
+  scale_colour_manual(name = TeX(r'(Correlation ($\rho$))'),
+                      values = c(
+                        "#FFE5B4",  # abricot clair
+                        "#FFBFA0",  # corail doux
+                        "#FF8CA0",  # rose saumon
+                        "#C478B8",  # violet chaud
+                        "#8050A0",  # violet saturé
+                        "#50286F",  # prune foncé
+                        "#2B1240"   # aubergine très foncé
+                      )) +
+  xlab(TeX(r'($\frac{\widehat{\theta} - \theta}{\theta}$)')) +
+  ylab("Type I error") + 
+  theme_classic() +
+  # scale_x_continuous(breaks = c(round(seq(-0.99, 9, length.out = 5), 0) ,0)) +
+  theme(legend.position = 'bottom') +
+  guides(
+    colour = guide_legend(nrow = 1))
 
-pair_cellPop <- combn(2:(length(cell_pop_to_test)+1),2)
-allPairplot <- lapply(1:ncol(pair_cellPop), function(p){
-  if (colnames(cell_theta)[pair_cellPop[1,p, drop = T]] == "memory.b"){
-    lab_x <- "memory b cells"
-  }
-  else{
-    lab_x <- firstup(colnames(cell_theta)[pair_cellPop[1,p, drop = T]])
-  }
+((plt_illu_negbin + ggtitle("A")) + 
+  (plt_typeI_negbin + ggtitle("B"))) /
+  (plt_neg_bin_cor + ggtitle("C")) +
+  plot_layout(heights = c(1.5, 2)) &
+  theme(plot.title = element_text(face = "bold", size = 22),
+        text = element_text(size = 20))
+
+
+
+ggsave("Figures/figure4.pdf", width = 315, height = 200, units = "mm")
+
+
+#------------------------------------------------------------------------------#
+#                                 Figure 5                                     #
+#                         Applications on Bonne marrow                         #
+#------------------------------------------------------------------------------#
+
+
+Xtrain <- read_xlsx("results/ResultsOnScRNASeq.xlsx", sheet = "Xtrain")
+Xtest <- read_xlsx("results/ResultsOnScRNASeq.xlsx", sheet = "Xtest")
+cluster <- read_xlsx("results/ResultsOnScRNASeq.xlsx", sheet = "Cluster")
+results <- read_xlsx("results/ResultsOnScRNASeq.xlsx", sheet = "Results")
+
+
+#------------------------------------------------------------------------------#
+#                 Panel A Gene-specific overdispersion parameters              #
+
+pval_toQQ <- results %>% dplyr::select(Gene,
+                                PvaluesAfterUnivariateClustering,
+                                PValuesAfterMultivariateClustering) %>%
+  tidyr::pivot_longer(
+    cols = c(PvaluesAfterUnivariateClustering, PValuesAfterMultivariateClustering),
+    names_to = "Method",
+    values_to = "Pvalue"
+  ) %>%
+  mutate(Method = case_when(
+    Method == "PvaluesAfterUnivariateClustering" ~ "Univariate \n Clustering",
+    Method == "PValuesAfterMultivariateClustering" ~ "Multivariate \n Clustering"
+  ))
+
+plt_qqApplication <- ggplot(pval_toQQ) +
+  geom_abline(slope=1, intercept=0, col="red", size = 1.2, alpha = .7) + 
+  stat_qq(aes(sample = Pvalue, colour = factor(Method)),
+          distribution = qunif, size = 1.5) +
+  scale_colour_manual(name = "Method",
+                      values = c("#8C33FF",  # bleu
+                                 "#2CA02C")) +
+  xlab("Theoretical Quantiles") + 
+  ylab("Empirical Quantiles") + 
+  xlim(c(0, 1)) + ylim(c(0, 1)) + 
+  theme_classic() +
+  theme(text = element_text(size = 14))
+
+#------------------------------------------------------------------------------#
+#         Panel B-C Correlation between genes lead to problems even on         #
+#                         homogeneous sub-population                           #
+
+# Correlation plots 
+plt_cor_orig_thin <- ggplot(results) +
+  geom_abline(slope=1, intercept=0, col="red", size = 1.2, alpha = .7) + 
   
-  if (colnames(cell_theta)[pair_cellPop[2,p, drop = T]] == "memory.b"){
-    lab_y <- "memory b cells"
-  }
-  else{
-    lab_y <- firstup(colnames(cell_theta)[pair_cellPop[2,p, drop = T]])
-  }
-  df_temp <- data.frame(Gene = cell_theta$Gene, 
-                        Pop1 = cell_theta[,pair_cellPop[1,p, drop = T]],
-                        Pop2 = cell_theta[,pair_cellPop[2,p, drop = T]])
+  aes(x=OriginalCorWithGene1, 
+      y = ThinningCorWithGene1TrainAndTest) +
+  geom_point(size = 1,
+             alpha = .5) +
+  ylab(TeX(r'(Cor$\left(X^{(1)}_1, X^{(2)}_j\right)$)')) +
+  xlab(TeX(r'(Cor$\left(X_1, X_j\right)$)')) +
+  xlim(c(-1,1)) +
+  ylim(c(-1,1)) +
+  theme_classic()
+
+
+## Sélection du gène
+GeneToSel <- sort(
+  results$PValuesAfterMultivariateClustering,
+  index.return = TRUE
+)$ix[1]
+
+## Clustering univarié (Train)
+km_uni <- kmeans(
+  log2(Xtrain[, GeneToSel] + 1),
+  centers = 2,
+  nstart  = 100
+)
+
+## Réplication Train + Test
+cluster_uni <- c(km_uni$cluster, km_uni$cluster)
+
+Xtrain1 <- tibble(
+  Gene1 = c(
+    Xtrain[, GeneToSel, drop = TRUE],
+    Xtest[, GeneToSel, drop = TRUE],
+    Xtrain[, GeneToSel, drop = TRUE],
+    Xtest[, GeneToSel, drop = TRUE]
+  ),
+  Cluster = factor(c(
+    rep(cluster$Cluster, 2), # Multivarié
+    cluster_uni # Univarié
+  )),
+  Method = factor(
+    rep(c("Multivariate", "Univariate"),
+        each = 2 * nrow(Xtrain))
+  ),
+  Thinning = factor(
+    rep(rep(c("Train", "Test"), each = nrow(Xtrain)), 2),
+    levels = c("Train", "Test"))
+) %>%
+  mutate(
+    MethodName = paste(Method, "Clustering", sep = " ")
+  )
+
+
+pvals <- Xtrain1 %>%
+  group_by(MethodName, Thinning) %>%
+  summarise(
+    p_value = wilcox.test(log2(Gene1 + 1) ~ Cluster)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    label = paste0(
+      "Wilcoxon~italic(p)~\"=\"~\"",
+      scales::pvalue(p_value),
+      "\""
+    ),
+    y_pos = max(log2(Xtrain1$Gene1 + 1), na.rm = TRUE) * 1.25
+  )
+
+plt_illuApplication <- 
+  Xtrain1%>%
+  ggplot(
+    aes(
+      x    = Thinning,
+      y    = log2(Gene1 + 1),
+      fill = Cluster
+    )
+  ) +
+  introdataviz::geom_split_violin(alpha = .5, trim = FALSE) +
+  geom_boxplot(width = .2, alpha = 1, show.legend = FALSE) +
   
-  rmse <- round(sqrt(mean((df_temp$Pop1 - df_temp$Pop2)^2)), 2)
-  df_temp$rmse <- paste0("RMSE=", rmse)
-  ggplot(df_temp) + aes(x=Pop1, y = Pop2) +
-    # geom_point(alpha = .5) +
-    scattermore::geom_scattermore(pointsize = 4, alpha = .3) +
-    geom_abline(slope = 1, intercept = 0, colour = "darkred", linetype = "dashed", linewidth = 1) +
-    xlab(lab_x) +
-    ylab(lab_y) +
-    # geom_label(aes(x = Inf, y = Inf, label = paste("RMSE =", round(rmse, 2))), 
-    #            hjust = 1, vjust = 1, size = 6, color = "white", fill = "darkred") +
-    facet_grid(~rmse) +
-    scale_x_log10(breaks = c(0.01, 0.1, 1, 10), 
-                  labels = c(0.01, 0.1, 1, 10)) +
-    scale_y_log10() +
-    annotation_logticks(side = "bl") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-    NULL
-})
+  ## P-values (solution robuste)
+  geom_text(
+    data = pvals,
+    aes(
+      x     = Thinning,
+      y     = y_pos,
+      label = label
+    ),
+    inherit.aes = FALSE,
+    parse = TRUE,
+    size  = 4
+  ) +
+  
+  scale_fill_manual(
+    name   = "PGK1",
+    values = rev(colorspace::lighten(c("#294122", "#EB3D00"), 0.25)),
+    labels = c(TeX(r'($C_1$)'), TeX(r'($C_2$)'))
+  ) +
+  scale_colour_manual(
+    name   = "PGK1",
+    values = rev(colorspace::lighten(c("#294122", "#EB3D00"), 0.25)),
+    labels = c(TeX(r'($C_1$)'), TeX(r'($C_2$)'))
+  ) +
+  facet_grid(~MethodName) +
+  ylab("log2(counts + 1)") +
+  xlab("") +
+  scale_x_discrete(
+    labels = c(
+      "Train" = expression(X^{(1)}),
+      "Test"  = expression(X^{(2)})
+    )
+  )
 
-plt_application <- ((allPairplot[[1]]+ ggtitle("C") + theme(plot.title = element_text(face = "bold", size = 20))) + plot_spacer()  + allPairplot[[2]] + plot_spacer()  + allPairplot[[3]] + plot_spacer()  + allPairplot[[4]]) + plot_layout(nrow = 1, widths = c(4,.5,4,.5,4,.5,4)) 
+plt_illuApplication
+
+figure5 <- ((plt_cor_orig_thin + plt_qqApplication ) / (plt_illuApplication)) +
+  plot_annotation(tag_levels = "A") +
+  plot_layout(height = c(2, 4)) &
+  theme_classic() &
+  theme(text = element_text(size = 14),
+        plot.tag = element_text(face = "bold", size = 16))
+
+ggsave("Figures/figure5.pdf", plot = figure5, width = 250, height = 200, units = "mm")
 
 
-(plt_negbin) / (plt_application) &  #+ plot_annotation(tag_levels = "A") + plot_layout(tag_level = "new") & 
-  theme(text = element_text(size = 20))
+# Table pvalues 
+typeI_table <- data.frame(Method = c("Multivariate Clustering",
+                                     "Univariate Clustering"),
+                          `Type I` = c(mean(results$PValuesAfterMultivariateClustering < 0.05),
+                                       mean(results$PvaluesAfterUnivariateClustering < 0.05))) 
+xt <- xtable::xtable(typeI_table, 
+             caption = "Type I error rates from Wilcoxon tests after Negative Binomial data thinning. 
+  In the multivariate setting, k-means clustering is performed on all 500 genes in X^{(1)}, 
+  and Wilcoxon tests are applied gene-wise on X^{(2)}. 
+  In the univariate setting, clustering is performed individually for each gene in X^{(1)}."
+)
+
+xtable::print.xtable(xt, 
+      type = "latex",           # génère du LaTeX
+      file = "results/TypeIErrorRateNBOnScRNASeq.txt",    # nom du fichier
+      include.rownames = FALSE) 
 
 
-ggsave("Figures/figure4.png", width = 315, height = 200, units = "mm")
