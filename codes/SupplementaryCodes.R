@@ -20,7 +20,309 @@ library(readxl)
 theme_set(theme_classic())
 
 #------------------------------------------------------------------------------#
-#                 Sup. Figure X: QQ-Plot of pvalues when 
+#                                   Supp Section 4                             #                                 
+#               Impact of variance estimation on Type I error rate             # 
+#------------------------------------------------------------------------------#
+
+#------------------------------------------------------------------------------#
+#                           Internals functions                                #
+#------------------------------------------------------------------------------#
+
+# Marginal variance of a Gaussian Mixture
+mixture_variance <- function(pi, mu_list, sigma_list) {
+  # Function that computes the marginal variance of a Gaussian mixtures models of
+  # parameters :
+  #pi: a vector of length G that contains mixing proportion 
+  # mu_list: a list of length G that contains vector of length p that are the means of each components
+  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
+  #
+  #return a matrix of dimension p x p that contains the marginal covariance of the mixture 
+  
+  G <- length(pi)  #Number of component in the mixture
+  d <- length(mu_list[[1]])  # Dimension
+  mu_Z <- Reduce("+", Map("*", pi, mu_list))  # Marginal mean of the mixture
+  
+  # Initialisation of the covariance matrix
+  Sigma <- matrix(0, nrow = d, ncol = d)
+  
+  # Marginal variance computation
+  for (g in 1:G) {
+    Sigma <- Sigma + pi[g] * (sigma_list[[g]] + tcrossprod(mu_list[[g]]))
+  }
+  Sigma <- Sigma - tcrossprod(mu_Z)
+  
+  return(Sigma)
+}
+
+# Conditional covariance in marginal fission 
+margFission_condCovariance <- function(g,
+                                       pi,
+                                       list_mu,
+                                       list_Sigma){
+  # Function that compute the conditional covariance between X1 and X2 when marginal
+  # data fission is applied. This covariance is equale to Sigma_g - Sigma
+  #
+  # parameters :
+  #g: The number of the component of the mixture where the conditional covariance must be computed
+  #pi: a vector of length G that contains mixing proportion 
+  # mu_list: a list of length G that contains vector of length p that are the means of each components
+  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
+  #
+  #return a matrix of dimension p x p that contains the conditional covariance 
+  Sigma <- mixture_variance(pi, list_mu, list_Sigma)
+  margFission <- Sigma - list_Sigma[[g]]
+}
+
+
+# Marginal covariance in conditional fission
+condFission_margCovariance <- function(pi,
+                                       list_mu,
+                                       list_Sigma){
+  # Function that compute the marginal covariance between X1 and X2 when conditional
+  # data fission is applied.
+  #
+  # parameters :
+  #pi: a vector of length G that contains mixing proportion 
+  # mu_list: a list of length G that contains vector of length p that are the means of each components
+  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
+  #
+  #return a matrix of dimension p x p that contains the marginal covariance 
+  
+  # Marginal covariance in conditional fission
+  list_pi <- list(pi[1], pi[2])
+  margMu <- Reduce(`+`, Map(`*`,list_pi, list_mu))
+  
+  margSigma <- Reduce(`+`, Map(function(pi_k, mu_k) {
+    diff <- matrix(mu_k - margMu, ncol = 1)
+    pi_k * (diff %*% t(diff))  # Produit matriciel
+  }, list_pi, list_mu))
+  
+}
+
+
+compute_typeI <- function(n, tau, sigma, sigma_hat, alpha){
+  # Function that computes theoritical type I error of data fission
+  qu_t <- qt(alpha/2, df = n-2, lower.tail = FALSE)
+  qu_n <- qnorm(alpha/2, lower.tail = F)
+  cor_fg <- (sigma^2-sigma_hat^2)/sqrt((sigma^2 + (tau^2)*sigma_hat^2)*(sigma^2 + (1/tau^2)*sigma_hat^2))  
+  mean_t <- sqrt(n)*sqrt((2/pi)*cor_fg^2)/sqrt(1-(2/pi)*cor_fg^2)
+  
+  return(pnorm(qu_n, mean = mean_t, sd= 1, lower.tail = FALSE) + pnorm(-qu_n, mean = mean_t, sd= 1, lower.tail = TRUE))
+}
+
+
+#------------------------------------------------------------------------------#
+#                           Simulations setting                                #
+rm("pi")
+n <- 100
+n_grid <- c(50, 100, 200, 500, 1000)
+sigma <- c(0.1, 0.5, 1, 2)
+sigma_grid <- sort(c(seq(0, 4, length.out = 50), 2, 0.1))
+sigma_grid2 <- seq(0.8, 1.8, length = 50)
+tau <- .4
+
+#------------------------------------------------------------------------------#
+#             First panel: Function of the original variance                   #
+
+
+sigma_grid_plot <- seq(0, 6*max(sigma), length.out = 1000)
+
+typeI_theo <- lapply(sigma_grid_plot, function(s){
+  temp <- compute_typeI(n, tau , sigma, sigma_hat = s, alpha = .05)
+  return(data.frame(TypeItheo = temp,
+                    sigma_hat = s,
+                    sigma = sigma))
+})
+
+typeI_df <- do.call(rbind.data.frame, typeI_theo) %>% mutate(sigma_name = paste0("sigma^2==", sigma^2))
+
+
+var_bias <- read.csv(file = "results/VarianceEstimationAndTypeIError.csv")
+
+var_bias_res <- var_bias %>%
+  group_by(sigma, sigma_hat, n) %>%
+  summarise(EmpTypeI = mean(pvalues < 0.05)) %>%
+  ungroup() %>%
+  # mutate(TheTypeI = compute_typeI(n = n, tau = tau, sigma = sigma, sigma_hat = sigma_hat, alpha = .05)) %>%
+  mutate(sigma_name = paste0("sigma^2==", sigma^2)) %>%
+  mutate(Ratio = (sigma^2-sigma_hat^2)/sigma^2) %>%
+  reshape2::melt(id.vars = c("Ratio", "sigma_name", "sigma", "sigma_hat"), measure_vars = c("TheTypeI", "EmpTypeI"))
+
+plot_sigma <-  ggplot(var_bias_res) + aes(x=Ratio, y = value, colour = sigma_name) +
+  geom_point(data = subset(var_bias_res, variable == "EmpTypeI"), aes(shape = "Empirical"), size = 4) +
+  scale_shape_manual(name = "Empirical", values = 2, labels = '', guide = "legend") +
+  # geom_line(data = subset(df_res_sigma, variable == "TheTypeI"), aes(group = sigma_name, linetype = "Theoritical"), size = 1) +
+  geom_line(data = typeI_df, aes(x= (sigma^2-sigma_hat^2)/sigma^2, y = TypeItheo, group = sigma_name, colour = sigma_name, linetype = "Theoritical"), size = 1) +
+  scale_linetype_manual(name = "Theoritical", values = 1, labels = "", guide = "legend") +
+  scale_colour_manual(name = '',
+                      values = c("#93B5C6", "#DBC2CF", "#998bc0", "#BD4F6C"),
+                      labels = c(TeX(r'($\sigma^2 = 0.01$)'),
+                                 TeX(r'($\sigma^2 = 0.25$)'),
+                                 TeX(r'($\sigma^2 = 1$)'),
+                                 TeX(r'($\sigma^2 = 4$)'))) +
+  xlab(TeX(r'($(\sigma^2 - \widehat{\sigma^2})/\sigma^2$)')) +
+  xlim(c(-5,2)) +
+  ylab("Type I error rate") +
+  ggnewscale::new_scale_colour() +
+  geom_hline(aes(yintercept = 0.05, 
+                 colour = "5% nominal levels"),
+             linetype = 2,
+             size = 1.2) +
+  scale_colour_manual(name = "",
+                      values = "#6C0E23") +
+  guides(
+    shape = guide_legend(order = 1),
+    linetype = guide_legend(order = 2),
+    color = guide_legend(order = 3)
+  ) +
+  NULL
+
+
+#------------------------------------------------------------------------------#
+#               Second panel: Function of the sample size                      #
+
+
+var_bias_sampsize <- read.csv(file = "results/VarianceEstimationAndTypeIErrorSampleSize.csv")
+
+var_bias_sampsize_res <-  var_bias_sampsize %>%
+  group_by(n, sigma_hat, sigma) %>%
+  rename(SampSize = n) %>%
+  summarise(EmpTypeI = mean(pvalues < 0.05)) %>%
+  ungroup() %>%
+  mutate(TheTypeI = compute_typeI(n = SampSize, 
+                                  tau = tau, 
+                                  sigma = sigma,
+                                  sigma_hat = sigma_hat, 
+                                  alpha = .05)) %>%
+  mutate(sigma_name = paste0("sigma^2==", sigma^2)) %>%
+  mutate(Ratio = (sigma^2-sigma_hat^2)/sigma^2) %>%
+  reshape2::melt(id.vars = c("Ratio", "sigma_name", "SampSize", "sigma", "sigma_hat"), measure_vars = c("TheTypeI", "EmpTypeI"))
+
+plot_sigma_n <- ggplot(var_bias_sampsize_res) + aes(x=Ratio, y = value, colour = as.factor(SampSize)) +
+  geom_point(data = subset(var_bias_sampsize_res, variable == "EmpTypeI"),
+             aes(shape = "Empirical"), 
+             size = 4) +
+  scale_shape_manual(name = "Empirical",
+                     values = 2, labels = '',
+                     guide = "legend") +
+  geom_line(data = subset(var_bias_sampsize_res, variable == "TheTypeI"), 
+            aes(group = SampSize, linetype = "Theoritical"), size = 1) +
+  scale_linetype_manual(name = "Theoritical", 
+                        values = 1,
+                        labels = "", 
+                        guide = "legend") +
+  scale_colour_manual(name = "", 
+                      values = colorRampPalette(c("#008154", "#0092a4", "#2a2956"))(length(n_grid)),
+                      labels = paste0("n=", n_grid)) +
+  xlab(TeX(r'($(\sigma^2 - \widehat{\sigma^2})/\sigma^2$)')) +
+  ylab("Type I error rate") +
+  ggnewscale::new_scale_colour() +
+  geom_hline(aes(yintercept = 0.05, 
+                 colour = "5% nominal levels"),
+             linetype = 2,
+             size = 1.2) +
+  scale_colour_manual(name = "",
+                      values = "#6C0E23") +
+  guides(
+    shape = guide_legend(order = 1),
+    linetype = guide_legend(order = 2),
+    color = guide_legend(order = 3)
+  ) +
+  NULL
+
+(plot_sigma + plot_sigma_n)  +
+  plot_annotation(tag_levels = "A") &
+  theme_classic() &
+  theme(axis.title = element_text(size = 24), 
+        axis.text = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        plot.tag = element_text(face = "bold", size = 24),
+        legend.spacing = unit(0.01, "cm"))
+
+ggsave(filename = "Supplementary Figures/SuppFigureSection4.pdf",
+       width = 350, 
+       height = 120, 
+       units = "mm",
+       dpi = 600)
+
+
+#------------------------------------------------------------------------------#
+#                              Supp Section 5                                  #
+#               Applications on real world data  sets of a                     #  
+#                         two cell populations mixture                         #
+#------------------------------------------------------------------------------#
+H1_genes <- H0_genes <- 250
+
+results_application <- read.csv("results/SupplementaryResultsApplicationOnScRNASeqWithNull.csv") %>%
+  mutate(ClusteringName = paste(Clustering, "Clustering", sep = " "),
+         ThinningName = paste(Thinning, "Thinning", sep = " ")) %>%
+  mutate(Hyp = rep(c(rep("H1",H1_genes),
+                     rep("H0",H0_genes)),4))
+
+tagName <- results_application %>% 
+  filter(Hyp == "H1") %>%
+  group_by(ThinningName, ClusteringName) %>%
+  arrange(pvalue) %>%
+  slice_head(n = 5)
+
+plt_scatter_pval_H0 <-results_application  %>%
+  filter(Hyp == "H0") %>%
+  ggplot() +
+  aes(x=-log10(TruePvalue),
+      y=-log10(pvalue), 
+      colour = ARI) +
+  geom_point(alpha = .5,
+             size = 2) +
+  # ggrepel::geom_label_repel(data = tagName, aes(label = GeneSymbol)) +
+  geom_hline(yintercept = -log10(0.05)) +
+  # geom_vline(xintercept = (0.05)) +
+  facet_grid(ClusteringName~ThinningName, scales = "free") +
+  xlab("-log10(True p-value)") +
+  ylab("-log10(p-value)") +
+  scale_colour_viridis_c(option = "plasma",
+                         direction = -1, limits = c(min(results_application$ARI),1)) +
+  ggtitle(TeX(r'(Distribution of p-values for genes under $H_0$)'))
+
+plt_scatter_pval_H1 <-results_application  %>%
+  filter(Hyp == "H1") %>%
+  ggplot() +
+  aes(x=-log10(TruePvalue),
+      y=-log10(pvalue), 
+      colour = ARI) +
+  geom_point(alpha = .5,
+             size = 2) +
+  ggrepel::geom_label_repel(data = tagName, aes(label = GeneSymbol)) +
+  geom_hline(yintercept = -log10(0.05)) +
+  # geom_vline(xintercept = (0.05)) +
+  facet_grid(ClusteringName~ThinningName, scales = "free") +
+  xlab("-log10(True p-value)") +
+  ylab("-log10(p-value)") +
+  scale_colour_viridis_c(option = "plasma",
+                         direction = -1, limits = c(min(results_application$ARI),1)) +
+  ggtitle(TeX(r'(Distribution of p-values for genes under $H_1$)'))
+
+
+suppFigureSec5 <- plt_scatter_pval_H0 / plt_scatter_pval_H1 + 
+  plot_layout(guides = "collect") &
+  theme_bw() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 14)) 
+
+ggsave(suppFigureSec5,
+       filename = "Supplementary Figures/SuppFigureSection5.pdf",
+       width = 150, 
+       height = 250, 
+       units = "mm")
+
+indicator_performances <- results_application %>% 
+  group_by(Thinning, Clustering) %>%
+  summarise(Power = mean(pvalue < 0.05 & TruePvalue<0.05), 
+            typeI = mean(pvalue < 0.05 & TruePvalue > 0.05))
+
+
+ #------------------------------------------------------------------------------#
+#                 Sup. Figure 1: QQ-Plot of pvalues when 
 #                         correlated data generation            
 #------------------------------------------------------------------------------#
 
@@ -55,14 +357,14 @@ qqplot_cor <- neg_bin_cor_res %>%
   theme_classic() +
   theme(text = element_text(size = 14))
 
-ggsave(filename = "Supplementary Figures/SuppFigure_QQPlotCor.pdf", 
+ggsave(filename = "Supplementary Figures/SuppFigure1.pdf", 
        plot = qqplot_cor,
        width = 200,
        height = 150,
        units = "mm")
 
 #------------------------------------------------------------------------------#
-#                 Sup. Figure X: QQ-Plot of pvalues when 
+#                 Sup. Figure 2: QQ-Plot of pvalues when 
 #                   correlated data generation as a
 #                       function of relative biais 
 #------------------------------------------------------------------------------#
@@ -108,13 +410,13 @@ qqplot_cor_biais <- neg_bin_cor_res %>%
   theme_classic() +
   theme(text = element_text(size = 14))
 
-ggsave(filename = "Supplementary Figures/SuppFigure_QQPlotCorBiais.pdf", 
+ggsave(filename = "Supplementary Figures/SuppFigure2.pdf", 
        plot = qqplot_cor_biais,
        width = 200,
        height = 150,
        units = "mm")
 #------------------------------------------------------------------------------#
-#                               Sup. Figure X                                  #
+#                               Sup. Figure 3                                  #
 #                         Applications on Bonne marrow                         #
 #------------------------------------------------------------------------------#
 
@@ -178,57 +480,10 @@ allPairplot <- lapply(1:ncol(pair_cellPop), function(p){
 plt_application <- ((allPairplot[[1]]) + allPairplot[[2]] + allPairplot[[3]] + allPairplot[[4]]) +
   plot_layout(nrow = 1) & 
   theme_classic() +
-  theme(text = element_text(size = 18))
+  theme(text = element_text(size = 14))
 
-#------------------------------------------------------------------------------#
-#                 Sup. Figure X: Applications on real world data sets          #
-#                         of a two cell populations mixture                    #
-#------------------------------------------------------------------------------#
-
-results_application <- read.csv("results/SupplementaryResultsApplicationOnScRNASeq.csv") %>%
-  mutate(ClusteringName = paste(Clustering, "Clustering", sep = " "),
-         ThinningName = paste(Thinning, "Thinning", sep = " "))
-
-tagName <- results_application %>% 
-  group_by(ThinningName, ClusteringName) %>%
-  arrange(pvalue) %>%
-  slice_head(n = 5)
-
-plt_scatter_pval <-results_application  %>%
-  ggplot() +
-  aes(x=-log10(TruePvalue),
-      y=-log10(pvalue), 
-      colour = ARI) +
-  geom_abline(slope=1, intercept=0, col="red", size = 1.2, alpha = .7) +
-  geom_point(alpha = .5) +
-  ggrepel::geom_label_repel(data = tagName, aes(label = GeneSymbol)) +
-  # geom_hline(yintercept = -log10(0.05)) +
-  # geom_vline(xintercept = -log10(0.05)) +
-  facet_grid(ClusteringName~ThinningName) +
-  xlab("-log10(True p-value)") +
-  ylab("-log10(p-value)") +
-  scale_colour_viridis_c(option = "plasma",
-                         direction = -1, limits = c(min(results_application$ARI),1))
-
-ggsave(filename = "Supplementary Figures/SuppFigure_ApplicationTwoCellPops.pdf",
-       width = 150, 
-       height = 100, 
+ggsave(plt_application,
+       filename = "Supplementary Figures/SuppFigure3.pdf",
+       width = 200,
+       height = 75,
        units = "mm")
-
-
-# venn_data <- results_application %>% 
-#   mutate(Name = as.factor(paste(Clustering, Thinning, sep = "-")))
-# 
-# res <- lapply(levels(venn_data$Name), function(l){
-#   venn_data %>% filter(Name == l) %>%
-#     filter(pvalue < 0.05) %>%
-#     pull(Gene)
-# })
-# names(res) <- levels(venn_data$Name)
-# res$True <- venn_data %>% filter(TruePvalue<0.05) %>% pull(Gene) %>% unique()
-# UpSetR::upset(fromList(res), nintersects = NA)
-
-indicator_performances <- results_application %>% 
-  group_by(Thinning, Clustering) %>%
-  summarise(Power = mean(pvalue < 0.05 & TruePvalue<0.05), 
-            typeI = mean(pvalue < 0.05 & TruePvalue > 0.05))

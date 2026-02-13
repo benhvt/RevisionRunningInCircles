@@ -19,91 +19,6 @@ library(readxl)
 library(scales)
 theme_set(theme_classic())
 
-#------------------------------------------------------------------------------#
-#                           Internals functions                                #
-#------------------------------------------------------------------------------#
-
-# Marginal variance of a Gaussian Mixture
-mixture_variance <- function(pi, mu_list, sigma_list) {
-  # Function that computes the marginal variance of a Gaussian mixtures models of
-  # parameters :
-  #pi: a vector of length G that contains mixing proportion 
-  # mu_list: a list of length G that contains vector of length p that are the means of each components
-  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
-  #
-  #return a matrix of dimension p x p that contains the marginal covariance of the mixture 
-  
-  G <- length(pi)  #Number of component in the mixture
-  d <- length(mu_list[[1]])  # Dimension
-  mu_Z <- Reduce("+", Map("*", pi, mu_list))  # Marginal mean of the mixture
-  
-  # Initialisation of the covariance matrix
-  Sigma <- matrix(0, nrow = d, ncol = d)
-  
-  # Marginal variance computation
-  for (g in 1:G) {
-    Sigma <- Sigma + pi[g] * (sigma_list[[g]] + tcrossprod(mu_list[[g]]))
-  }
-  Sigma <- Sigma - tcrossprod(mu_Z)
-  
-  return(Sigma)
-}
-
-# Conditional covariance in marginal fission 
-margFission_condCovariance <- function(g,
-                                       pi,
-                                       list_mu,
-                                       list_Sigma){
-  # Function that compute the conditional covariance between X1 and X2 when marginal
-  # data fission is applied. This covariance is equale to Sigma_g - Sigma
-  #
-  # parameters :
-  #g: The number of the component of the mixture where the conditional covariance must be computed
-  #pi: a vector of length G that contains mixing proportion 
-  # mu_list: a list of length G that contains vector of length p that are the means of each components
-  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
-  #
-  #return a matrix of dimension p x p that contains the conditional covariance 
-  Sigma <- mixture_variance(pi, list_mu, list_Sigma)
-  margFission <- Sigma - list_Sigma[[g]]
-}
-
-
-# Marginal covariance in conditional fission
-condFission_margCovariance <- function(pi,
-                                       list_mu,
-                                       list_Sigma){
-  # Function that compute the marginal covariance between X1 and X2 when conditional
-  # data fission is applied.
-  #
-  # parameters :
-  #pi: a vector of length G that contains mixing proportion 
-  # mu_list: a list of length G that contains vector of length p that are the means of each components
-  #sigma_list: a list of G that contains matrix of dimension p x p that are the component-specific covariance
-  #
-  #return a matrix of dimension p x p that contains the marginal covariance 
-  
-  # Marginal covariance in conditional fission
-  list_pi <- list(pi[1], pi[2])
-  margMu <- Reduce(`+`, Map(`*`,list_pi, list_mu))
-  
-  margSigma <- Reduce(`+`, Map(function(pi_k, mu_k) {
-    diff <- matrix(mu_k - margMu, ncol = 1)
-    pi_k * (diff %*% t(diff))  # Produit matriciel
-  }, list_pi, list_mu))
-  
-}
-
-
-compute_typeI <- function(n, tau, sigma, sigma_hat, alpha){
-  # Function that computes theoritical type I error of data fission
-  qu_t <- qt(alpha/2, df = n-2, lower.tail = FALSE)
-  qu_n <- qnorm(alpha/2, lower.tail = F)
-  cor_fg <- (sigma^2-sigma_hat^2)/sqrt((sigma^2 + (tau^2)*sigma_hat^2)*(sigma^2 + (1/tau^2)*sigma_hat^2))  
-  mean_t <- sqrt(n)*sqrt((2/pi)*cor_fg^2)/sqrt(1-(2/pi)*cor_fg^2)
-  
-  return(pnorm(qu_n, mean = mean_t, sd= 1, lower.tail = FALSE) + pnorm(-qu_n, mean = mean_t, sd= 1, lower.tail = TRUE))
-}
 
 #------------------------------------------------------------------------------#
 #                                  Figures                                     #
@@ -187,6 +102,7 @@ plt_power <- powerResults %>%
                       values = MetBrewer::met.brewer("Derain", n=7)) +
   scale_linetype_manual(name = "Data fission",
                         values = c(1, 6)) +
+  guides(colour = guide_legend(nrow = 2)) +
   ggnewscale::new_scale_colour() +
   geom_hline(aes(yintercept = 0.05, 
                  colour = "5% nominal level"),
@@ -198,7 +114,11 @@ plt_power <- powerResults %>%
   facet_grid(Variable_lab~Fission_lab, 
              labeller = label_parsed) +
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
-  ylab("Statistical Power \n 5% level")
+  ylab("Statistical Power \n 5% level") +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  ) 
 
 plt_ari <- ggplot(ariResults) +
   aes(x=tau, y = ARI_m, 
@@ -211,25 +131,31 @@ plt_ari <- ggplot(ariResults) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
-  ylab("Adjusted Rand \n Index")
+  ylab("Adjusted Rand \n Index") +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  ) +
+  guides(color = guide_legend(nrow = 2))
 
-figure2A <- ((plt_illu_power + theme(legend.position = "bottom")) +
+figure1 <- ((plt_illu_power + theme(legend.position = "bottom")) +
                (plt_ari/plt_power + plot_layout(guides = "collect",
                                                 heights = c(1,4)))) +
-  plot_layout(widths = c(1.5,1.25)) +
+  plot_layout(widths = c(.8,1)) +
   plot_annotation(tag_levels = list(c("A", "B", "C"))) &
-  theme(text = element_text(size = 9)) &
+  theme(legend.position = "bottom",
+        text = element_text(size = 12)) &
   theme(plot.tag = element_text(face = "bold"))
 
-ggsave(figure2A,
-       filename = "Figures/figure2A.pdf",
-       width = 180,
-       height = 100,
+ggsave(figure1,
+       filename = "Figures/figure1.pdf",
+       width = 190,
+       height = 120,
        units = "mm")
-#------------------------------------------------------------------------------#
-#                      Second panel of the Figure                              #
-#                 Type I error rate in the worst scenario                      #
 
+#------------------------------------------------------------------------------#
+#                               Figure 2                                       #
+#               Type I error rate in the adverse scenario                      #
 
 # Clustering: Only the first component of the mixture is clusterized into two spurious clusters
 clust_comp <- kmeans(X[Z==1,], centers = 2, nstart = 100)$cluster
@@ -269,6 +195,7 @@ plt_typeI <- adverse_sc %>%
             alpha = .8) +
   scale_colour_manual(name = "Sample Size",
                       values = MetBrewer::met.brewer("Derain", n=7)) +
+  guides(color = guide_legend(nrow = 2)) +
   ggnewscale::new_scale_colour() +
   geom_hline(aes(yintercept = 0.05, 
                  colour = "5% nominal level"),
@@ -280,166 +207,28 @@ plt_typeI <- adverse_sc %>%
   facet_grid(Variable_lab~Fission_lab, 
              labeller = label_parsed) +
   xlab(TeX(r'( Tunning parameter $\tau$)')) +
-  ylab("Type I error rate \n 5% nominal levels") +
-  theme(legend.box = "vertical")
+  ylab("Type I error rate \n 5% nominal levels")  +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal"
+  ) 
 
 
-figure2B <- plt_illu_typeI + plt_typeI +
-  plot_layout(widths = c(1.5,1.25)) +
+figure2 <- plt_illu_typeI + plt_typeI +
+  plot_layout(widths = c(.8,1)) +
   plot_annotation(tag_levels = list(c("A", "B"))) &
-  theme(text = element_text(size = 8)) &
+  theme(text = element_text(size = 12)) &
   theme(plot.tag = element_text(face = "bold"))
 
-ggsave(figure2B,
-       filename = "Figures/figure2B.pdf",
-       width = 180,
-       height = 100,
+ggsave(figure2,
+       filename = "Figures/figure2.pdf",
+       width = 190,
+       height = 110,
        units = "mm")
 
 
 #------------------------------------------------------------------------------#
-#                                  Figures                                     #
-#               Impact of variance estimation on Type I error rate             # 
-#------------------------------------------------------------------------------#
-
-
-#------------------------------------------------------------------------------#
-#                           Simulations setting                                #
-rm("pi")
-n <- 100
-n_grid <- c(50, 100, 200, 500, 1000)
-sigma <- c(0.1, 0.5, 1, 2)
-sigma_grid <- sort(c(seq(0, 4, length.out = 50), 2, 0.1))
-sigma_grid2 <- seq(0.8, 1.8, length = 50)
-tau <- .4
-
-#------------------------------------------------------------------------------#
-#             First panel: Function of the original variance                   #
-
-
-sigma_grid_plot <- seq(0, 6*max(sigma), length.out = 1000)
-
-typeI_theo <- lapply(sigma_grid_plot, function(s){
-  temp <- compute_typeI(n, tau , sigma, sigma_hat = s, alpha = .05)
-  return(data.frame(TypeItheo = temp,
-                    sigma_hat = s,
-                    sigma = sigma))
-})
-
-typeI_df <- do.call(rbind.data.frame, typeI_theo) %>% mutate(sigma_name = paste0("sigma^2==", sigma^2))
-
-
-var_bias <- read.csv(file = "results/VarianceEstimationAndTypeIError.csv")
-
-var_bias_res <- var_bias %>%
-  group_by(sigma, sigma_hat, n) %>%
-  summarise(EmpTypeI = mean(pvalues < 0.05)) %>%
-  ungroup() %>%
-  # mutate(TheTypeI = compute_typeI(n = n, tau = tau, sigma = sigma, sigma_hat = sigma_hat, alpha = .05)) %>%
-  mutate(sigma_name = paste0("sigma^2==", sigma^2)) %>%
-  mutate(Ratio = (sigma^2-sigma_hat^2)/sigma^2) %>%
-  reshape2::melt(id.vars = c("Ratio", "sigma_name", "sigma", "sigma_hat"), measure_vars = c("TheTypeI", "EmpTypeI"))
-
-plot_sigma <-  ggplot(var_bias_res) + aes(x=Ratio, y = value, colour = sigma_name) +
-  geom_point(data = subset(var_bias_res, variable == "EmpTypeI"), aes(shape = "Empirical"), size = 4) +
-  scale_shape_manual(name = "Empirical", values = 2, labels = '', guide = "legend") +
-  # geom_line(data = subset(df_res_sigma, variable == "TheTypeI"), aes(group = sigma_name, linetype = "Theoritical"), size = 1) +
-  geom_line(data = typeI_df, aes(x= (sigma^2-sigma_hat^2)/sigma^2, y = TypeItheo, group = sigma_name, colour = sigma_name, linetype = "Theoritical"), size = 1) +
-  scale_linetype_manual(name = "Theoritical", values = 1, labels = "", guide = "legend") +
-  scale_colour_manual(name = '',
-                      values = c("#93B5C6", "#DBC2CF", "#998bc0", "#BD4F6C"),
-                      labels = c(TeX(r'($\sigma^2 = 0.01$)'),
-                                 TeX(r'($\sigma^2 = 0.25$)'),
-                                 TeX(r'($\sigma^2 = 1$)'),
-                                 TeX(r'($\sigma^2 = 4$)'))) +
-  xlab(TeX(r'($(\sigma^2 - \widehat{\sigma^2})/\sigma^2$)')) +
-  xlim(c(-5,2)) +
-  ylab("Type I error rate") +
-  ggnewscale::new_scale_colour() +
-  geom_hline(aes(yintercept = 0.05, 
-                 colour = "5% nominal levels"),
-             linetype = 2,
-             size = 1.2) +
-  scale_colour_manual(name = "",
-                      values = "#6C0E23") +
-  guides(
-    shape = guide_legend(order = 1),
-    linetype = guide_legend(order = 2),
-    color = guide_legend(order = 3)
-  ) +
-  NULL
-
-
-#------------------------------------------------------------------------------#
-#               Second panel: Function of the sample size                      #
-
-
-var_bias_sampsize <- read.csv(file = "results/VarianceEstimationAndTypeIErrorSampleSize.csv")
-
-var_bias_sampsize_res <-  var_bias_sampsize %>%
-  group_by(n, sigma_hat, sigma) %>%
-  rename(SampSize = n) %>%
-  summarise(EmpTypeI = mean(pvalues < 0.05)) %>%
-  ungroup() %>%
-  mutate(TheTypeI = compute_typeI(n = SampSize, 
-                                  tau = tau, 
-                                  sigma = sigma,
-                                  sigma_hat = sigma_hat, 
-                                  alpha = .05)) %>%
-  mutate(sigma_name = paste0("sigma^2==", sigma^2)) %>%
-  mutate(Ratio = (sigma^2-sigma_hat^2)/sigma^2) %>%
-  reshape2::melt(id.vars = c("Ratio", "sigma_name", "SampSize", "sigma", "sigma_hat"), measure_vars = c("TheTypeI", "EmpTypeI"))
-
-plot_sigma_n <- ggplot(var_bias_sampsize_res) + aes(x=Ratio, y = value, colour = as.factor(SampSize)) +
-  geom_point(data = subset(var_bias_sampsize_res, variable == "EmpTypeI"),
-             aes(shape = "Empirical"), 
-             size = 4) +
-  scale_shape_manual(name = "Empirical",
-                     values = 2, labels = '',
-                     guide = "legend") +
-  geom_line(data = subset(var_bias_sampsize_res, variable == "TheTypeI"), 
-            aes(group = SampSize, linetype = "Theoritical"), size = 1) +
-  scale_linetype_manual(name = "Theoritical", 
-                        values = 1,
-                        labels = "", 
-                        guide = "legend") +
-  scale_colour_manual(name = "", 
-                      values = colorRampPalette(c("#008154", "#0092a4", "#2a2956"))(length(n_grid)),
-                      labels = paste0("n=", n_grid)) +
-  xlab(TeX(r'($(\sigma^2 - \widehat{\sigma^2})/\sigma^2$)')) +
-  ylab("Type I error rate") +
-  ggnewscale::new_scale_colour() +
-  geom_hline(aes(yintercept = 0.05, 
-                 colour = "5% nominal levels"),
-             linetype = 2,
-             size = 1.2) +
-  scale_colour_manual(name = "",
-                      values = "#6C0E23") +
-  guides(
-    shape = guide_legend(order = 1),
-    linetype = guide_legend(order = 2),
-    color = guide_legend(order = 3)
-  ) +
-  NULL
-
-(plot_sigma + plot_sigma_n)  +
-  plot_annotation(tag_levels = "A") &
-  theme_classic() &
-  theme(axis.title = element_text(size = 24), 
-        axis.text = element_text(size = 18),
-        legend.text = element_text(size = 16),
-        legend.title = element_text(size = 18),
-        plot.tag = element_text(face = "bold", size = 24),
-        legend.spacing = unit(0.01, "cm"))
-
-ggsave(filename = "Figures/figure3.pdf",
-       width = 350, 
-       height = 120, 
-       units = "mm",
-       dpi = 600)
-
-#------------------------------------------------------------------------------#
-#                                  Figure 4                                    #
+#                                  Figure 3                                    #
 #         Data fission for scRNA-seq (Binomial Negatives Simulations)          # 
 #------------------------------------------------------------------------------#
 
@@ -464,11 +253,11 @@ cl_X <- kmeans(cbind(c(x1,x2), y), centers = 3)$cluster
 
 plt_illu_negbin <- ggplot(X) + aes(x=X1, 
                                    y=X2, 
-                                   colour = as.factor(cl_X), 
-                                   shape = as.factor(Z)) + 
-  geom_point(size = 3) +
-  scale_shape_manual(name = "True classes",
-                     values = c(15,16)) +
+                                   colour = as.factor(cl_X)) + #, 
+                                   #shape = as.factor(Z)) + 
+  geom_point(size = 1.5) +
+  # scale_shape_manual(name = "True classes",
+  #                    values = c(15,16)) +
   scale_colour_manual(name = "Clusters", 
                       values = c("#294122", "#EB3D00", "#FFBBA6"),
                       labels = c(TeX(r'($C_1$)'),
@@ -477,6 +266,9 @@ plt_illu_negbin <- ggplot(X) + aes(x=X1,
   xlab(TeX(r'($X_1$)')) +
   ylab(TeX(r'($X_2$)')) +
   theme_classic() +
+  theme(legend.position = "bottom",
+        legend.box = "vertical") +
+  guides(color = guide_legend(nrow = 1))
   # theme(legend.position = "bottom") +
   NULL
 
@@ -552,20 +344,23 @@ plt_neg_bin_cor <- neg_bin_cor_res %>%
   guides(
     colour = guide_legend(nrow = 1))
 
-((plt_illu_negbin + ggtitle("A")) + 
+figure3 <- ((plt_illu_negbin + ggtitle("A")) + 
   (plt_typeI_negbin + ggtitle("B"))) /
   (plt_neg_bin_cor + ggtitle("C")) +
-  plot_layout(heights = c(1.5, 2)) &
-  theme(plot.title = element_text(face = "bold", size = 22),
-        text = element_text(size = 20))
+  plot_layout(heights = c(1.2, 1)) &
+  theme(plot.title = element_text(face = "bold", size = 12),
+        text = element_text(size = 13))
 
 
-
-ggsave("Figures/figure4.pdf", width = 315, height = 200, units = "mm")
+ggsave(figure3,
+       filename = "Figures/figure3.pdf", 
+       width = 185,
+       height = 130,
+       units = "mm")
 
 
 #------------------------------------------------------------------------------#
-#                                 Figure 5                                     #
+#                                 Figure 4                                     #
 #                         Applications on Bonne marrow                         #
 #------------------------------------------------------------------------------#
 
@@ -726,14 +521,18 @@ plt_illuApplication <-
 
 plt_illuApplication
 
-figure5 <- ((plt_cor_orig_thin + plt_qqApplication ) / (plt_illuApplication)) +
+figure4 <- ((plt_cor_orig_thin + plt_qqApplication ) / (plt_illuApplication)) +
   plot_annotation(tag_levels = "A") +
   plot_layout(height = c(2, 4)) &
   theme_classic() &
-  theme(text = element_text(size = 14),
+  theme(text = element_text(size = 16),
         plot.tag = element_text(face = "bold", size = 16))
 
-ggsave("Figures/figure5.pdf", plot = figure5, width = 250, height = 200, units = "mm")
+ggsave("Figures/figure4.pdf",
+       plot = figure4, 
+       width = 250, 
+       height = 200, 
+       units = "mm")
 
 
 # Table pvalues 
