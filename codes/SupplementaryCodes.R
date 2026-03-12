@@ -16,6 +16,8 @@ library(patchwork)
 library(latex2exp)
 library(mvtnorm)
 library(readxl)
+library(umap)
+library(glmpca)
 
 theme_set(theme_classic())
 
@@ -321,7 +323,7 @@ indicator_performances <- results_application %>%
             typeI = mean(pvalue < 0.05 & TruePvalue > 0.05))
 
 
- #------------------------------------------------------------------------------#
+#------------------------------------------------------------------------------#
 #                 Sup. Figure 1: QQ-Plot of pvalues when 
 #                         correlated data generation            
 #------------------------------------------------------------------------------#
@@ -487,3 +489,158 @@ ggsave(plt_application,
        width = 200,
        height = 75,
        units = "mm")
+
+
+#------------------------------------------------------------------------------#
+#                               Sup. Figure 4                                  #
+#                 Visualisation of the homogenous population                   #
+#------------------------------------------------------------------------------#
+
+TS_granulo <- read_xlsx("results/ResultsOnScRNASeq.xlsx", 
+                        sheet = "RawCountsFilter")
+
+# GLM-PCA with L = 20 latent factors to estimate 
+set.seed(20260311)
+glmpca_granulo <- glmpca(Y = t(TS_granulo), 
+                    L = 50, 
+                    fam = "nb")
+
+glmPCplot <- ggplot(glmpca_granulo$factors) +
+  aes(x=dim1, 
+      y = dim2,
+      colour = "granulocyte") +
+  geom_hline(yintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_point(size = 1.5,
+             alpha = .8) +
+  scale_colour_manual(name = "True cells",
+                      values = c("granulocyte"= "#294122",
+                                 "cd24 neutrophil" = "#EB3D00")) +
+  xlab("GLM-PC 1") +
+  ylab("GLM-PC 1")
+
+# UMAP on the L=20 GLM-PCs of the log2CPM 
+## UMAP config
+config <- umap::umap.defaults
+config$n_neighbors <- 80
+config$min_dist <- 0.6
+
+## Run UMAP
+umap_TS_granulo <- umap(
+  glmpca_granulo$factors,
+  config = config
+)
+
+## UMAP plot
+umapPlot <- data.frame(umap_TS_granulo$layout) %>%
+  ggplot() +
+  aes(x = X1, 
+      y = X2,,
+      colour = "granulocyte") +
+  geom_hline(yintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  scale_colour_manual(name = "True cells",
+                      values = c("granulocyte"= "#294122",
+                                "cd24 neutrophil" = "#EB3D00")) +
+  geom_point(size = 1.5,
+             alpha = .8) +
+  xlab("UMAP 1") +
+  ylab("UMAP 2") 
+
+H0cellsPlot <- glmPCplot + umapPlot +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom",
+        text = element_text(size = 14))
+
+ggsave(H0cellsPlot, 
+       filename = "Supplementary Figures/SuppFigure4.pdf",
+       width = 150, 
+       height = 75,
+       units = "mm")
+
+#------------------------------------------------------------------------------#
+#                        Sup. Figure 2 of Section5                             #
+#              Visualisation of the 2 cells populations data                   #
+#------------------------------------------------------------------------------#
+
+TS_granulo_neutro <- read.csv("results/ResultsOnScRNASeq2CellPopulations.csv")
+counts_granulo_neutro <- TS_granulo_neutro %>% dplyr::select(-c(TrueCell))
+# GLM-PCA with L = 20 latent factors to estimate 
+set.seed(20260311)
+
+glmpca_granulo_neutro <- glmpca(Y = t(counts_granulo_neutro), 
+                         L = 50, 
+                         fam = "nb")
+
+glmPCplot_H1 <- data.frame(glmpca_granulo_neutro$factors,
+                           TrueCell = TS_granulo_neutro$TrueCell) %>%
+  ggplot() +
+  aes(x=dim1, y = dim2,
+      colour = TrueCell) +
+  geom_hline(yintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_point(size = 1,
+             alpha = .6) +
+  scale_colour_manual(name = "True cells",
+                      values = c("granulocyte"= "#294122",
+                                 "cd24 neutrophil" = "#EB3D00")) +
+  xlab("GLM-PC 1") +
+  ylab("GLM-PC 1")
+
+# UMAP on the L=20 GLM-PCs of the log2CPM 
+## UMAP config
+config <- umap::umap.defaults
+config$n_neighbors <- 80
+config$min_dist <- 0.6
+
+## Run UMAP
+umap_TS_granulo_neutro <- umap(
+  glmpca_granulo_neutro$factors,
+  config = config
+)
+
+## UMAP plot
+umapPlot_H1 <- data.frame(umap_TS_granulo_neutro$layout,
+                          TrueCell = TS_granulo_neutro$TrueCell) %>%
+  ggplot() +
+  aes(x = X1, 
+      y = X2,
+      colour = TrueCell) +
+  geom_hline(yintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_vline(xintercept = 0,
+             colour = "black",
+             linetype = "dashed") +
+  geom_point(size = 1,
+             alpha = .6) +
+  scale_colour_manual(name = "True cells",
+                      values = c("granulocyte"= "#294122",
+                                 "cd24 neutrophil" = "#EB3D00")) +
+  xlab("UMAP 1") +
+  ylab("UMAP 2")
+
+H1cellsPlot <- glmPCplot_H1 + umapPlot_H1 +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom",
+        text = element_text(size = 14))
+
+ggsave(H1cellsPlot, 
+       filename = "Supplementary Figures/SuppFigureSection5_2.pdf",
+       width = 150, 
+       height = 75,
+       units = "mm")
+
+

@@ -88,10 +88,20 @@ true_cell <- factor(
   c(rep("granulocyte", nrow(counts_macro)),
     rep("cd24 neutrophil", nrow(counts_neutro)))
 )
+
+## Save resulting data sets
+counts_filt %>% 
+  data.frame() %>%
+  mutate(TrueCell = true_cell) %>%
+  write.csv("results/ResultsOnScRNASeq2CellPopulations.csv",
+            row.names = FALSE)
+  
 #------------------------------------------------------------------------------
 # 5. Exploratory analysis (PCA / UMAP)
 #------------------------------------------------------------------------------
-pca_true <- PCA(log2(counts_filt + 1), graph = FALSE)
+pca_true <- PCA(log2(counts_filt + 1), 
+                graph = FALSE,
+                ncp = 50)
 clust_true <- kmeans(log2(counts_filt + 1), centers = 2, nstart = 100)$cluster
 
 ggplot(data.frame(pca_true$ind$coord,
