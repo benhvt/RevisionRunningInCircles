@@ -638,7 +638,7 @@ H1cellsPlot <- glmPCplot_H1 + umapPlot_H1 +
         text = element_text(size = 14))
 
 ggsave(H1cellsPlot, 
-       filename = "Supplementary Figures/SuppFigureSection5_2.pdf",
+       filename = "Supplementary Figures/SuppFigureSection52.pdf",
        width = 150, 
        height = 75,
        units = "mm")
