@@ -521,7 +521,7 @@ glmPCplot <- ggplot(glmpca_granulo$factors) +
                       values = c("granulocyte"= "#294122",
                                  "cd24 neutrophil" = "#EB3D00")) +
   xlab("GLM-PC 1") +
-  ylab("GLM-PC 1")
+  ylab("GLM-PC 2")
 
 # UMAP on the L=20 GLM-PCs of the log2CPM 
 ## UMAP config
@@ -597,7 +597,7 @@ glmPCplot_H1 <- data.frame(glmpca_granulo_neutro$factors,
                       values = c("granulocyte"= "#294122",
                                  "cd24 neutrophil" = "#EB3D00")) +
   xlab("GLM-PC 1") +
-  ylab("GLM-PC 1")
+  ylab("GLM-PC 2")
 
 # UMAP on the L=20 GLM-PCs of the log2CPM 
 ## UMAP config
